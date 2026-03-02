@@ -1,3 +1,5 @@
 Qwen
-data/mult*
+# data/mult*
+data/mult-10k-par_pq
+data/mult-10k-par
 Q3-8B-131072-SFT*

@@ -8,10 +8,11 @@ micro_batch_size=1
 gradient_accumulation_steps=2
 max_steps=-1
 push_to_hub=false
-OUTPUT_DIR=${OUTPUT_DIR:-"ckpts/Q3-8B-131072-AR-SFT-${uid}"}
 
+export OUTPUT_DIR=${OUTPUT_DIR:-"ckpts/Q3-8B-131072-AR-SFT-${uid}"}
 export TRAIN_DATA="${TRAIN_DATA:-./data/mult-10k-par}"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
 torchrun --nproc-per-node gpu --master_port 12345 \
     src/sft_autoregressive.py \
     --block_size=40960 \

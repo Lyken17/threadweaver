@@ -2,6 +2,7 @@ import trl
 import torch
 import re
 import time
+import os
 from typing import List, Any, Dict, Union, Optional, Tuple
 from collections import defaultdict
 
@@ -339,9 +340,10 @@ class PrefixTreeDataCollatorForCompletionOnlyLM(trl.DataCollatorForCompletionOnl
         if profile:
             print(f"torch_call completed in {time.time() - t1_torch_call:.4f} seconds.")
 
-        print(f"Final batch size: {len(examples)}, sequence length: {final_seq_len}")
-        print(f"Attention mask shape: {batch['attention_mask'].shape}")
-        print(f"Position ids shape: {batch['position_ids'].shape}")
-        print(f"Input IDs shape: {batch['input_ids'].shape}")
-        print(f"Labels shape: {batch['labels'].shape}")
+        if os.environ.get("DEBUG", "").lower() in ("1", "true", "yes", "t"):
+            print(f"Final batch size: {len(examples)}, sequence length: {final_seq_len}")
+            print(f"Attention mask shape: {batch['attention_mask'].shape}")
+            print(f"Position ids shape: {batch['position_ids'].shape}")
+            print(f"Input IDs shape: {batch['input_ids'].shape}")
+            print(f"Labels shape: {batch['labels'].shape}")
         return batch

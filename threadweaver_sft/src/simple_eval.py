@@ -654,9 +654,8 @@ def branching_generate(
 
             if end_seq:
                 print(
-                    "WARNING: Some thread did not end properly, returning the merged text without continuing."
+                    "WARNING: Some thread did not end properly, continuing with force-closed threads."
                 )
-                return merged
 
             merged += "\n"
 

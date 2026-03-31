@@ -51,6 +51,8 @@ python src/simple_eval.py \
     --bfloat16 \
     --timeout 600 \
     --verbose 2 \
+    --suffix "_${LABEL}_${UID_STAMP}" \
+    --overwrite \
     2>&1 | tee "${LOG_FILE}"
 
 echo ""

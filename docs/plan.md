@@ -19,11 +19,17 @@ Reproduce the two Ablation Studies tables from the ThreadWeaver README on AIME'2
 | With Std. Normalization | 74.79% | 18.7k |
 | **Mean-Centered Only (Ours)** | **79.90%** | **16.9k** |
 
-This requires SFT training at two data scales (959 and 17k samples), RL training with two normalization variants, and AIME'24 evaluation for all checkpoints. For the 1st SFT, pre-processed parallel trajectory data (~1000 samples) is available on HuggingFace at `longlian/threadweaver_public_code_reproduced` (subdirectory `polaris_data_53K_1_1k_1000samples_step5_v1_v1_v1`), which can be downloaded directly instead of running the full 5-stage data generation pipeline. For RL training data, follow the README to use Polaris-53K. The target cluster uses SLURM for job scheduling. GPU-requiring commands must be wrapped with `eai-run` since the login node does not have GPU access. The conda environment is named `tw` with Python 3.12.
+**Current Phase: SFT only.** Launch the 1st SFT phase first using pre-processed data from HuggingFace, evaluate on AIME'24, and confirm accuracy is within 2pp of the ablation table reference (74.5%). Two dataset variants are available — `sample_964` (1x) and `sample_964_8x` (8x) — and both must be trained and compared. RL phases will follow once SFT results are validated.
+
+Pre-processed parallel trajectory data is available on HuggingFace at `longlian/threadweaver_public_code_reproduced` under subdirectory `polaris_data_53K_1_1k_1000samples_v111/`:
+- `sample_964` — 1x dataset (~964 samples)
+- `sample_964_8x` — 8x augmented dataset
+
+For RL training data (future phase), follow the README to use Polaris-53K. The target cluster uses SLURM for job scheduling. GPU-requiring commands must be wrapped with `eai-run` since the login node does not have GPU access. The conda environment is named `tw` with Python 3.12.
 
 ## Acceptance Criteria
 
-Following TDD philosophy, each criterion includes positive and negative tests for deterministic verification. Metrics use tolerance-based targets: reference numbers from the README Ablation Studies serve as guidelines, with pass criteria allowing reasonable variance (within ~5 percentage points).
+Following TDD philosophy, each criterion includes positive and negative tests for deterministic verification. Metrics use tolerance-based targets: reference numbers from the README Ablation Studies serve as guidelines, with pass criteria allowing reasonable variance (within ~2 percentage points for AIME'24 accuracy).
 
 - AC-1: Environment setup completes and smoke test passes
   - Positive Tests (expected to PASS):
@@ -50,8 +56,8 @@ Following TDD philosophy, each criterion includes positive and negative tests fo
   - Negative Tests (expected to FAIL):
     - HuggingFace download fails with invalid dataset path
     - Dataset missing `qwen_text` field fails SFT training
-  - AC-2.1: First SFT dataset (~959 samples) ready from HuggingFace download
-    - Positive: Training parquet with ~959-1000 samples exposing `qwen_text` field, loaded directly from HF
+  - AC-2.1: First SFT datasets (1x and 8x) ready from HuggingFace download
+    - Positive: Both `sample_964` (1x, ~964 samples) and `sample_964_8x` (8x) downloaded from `polaris_data_53K_1_1k_1000samples_v111/`, each exposing `qwen_text` field
     - Negative: Dataset with incompatible schema for `train.sh`
   - AC-2.2: Self-Training dataset (17k samples) prepared
     - Positive: Expanded dataset with ~17k samples after self-training data augmentation using 1st SFT checkpoint
@@ -69,11 +75,13 @@ Following TDD philosophy, each criterion includes positive and negative tests fo
     - Unmodified config still shows `"max_position_embeddings": 40960`
     - Model path that doesn't exist raises OSError
 
-- AC-4: 1st SFT training (959 samples) completes and checkpoint evaluates on AIME'24
+- AC-4: 1st SFT training completes on both 1x and 8x datasets and checkpoints evaluate on AIME'24
   - Positive Tests (expected to PASS):
-    - SFT training on 959-sample dataset runs to completion via `eai-run`
-    - Checkpoint is loadable with `AutoModelForCausalLM.from_pretrained()`
-    - AIME'24 evaluation produces: Format Correctness ~56.4%, Accuracy ~74.5%, Token Latency ~17.6k (tolerance: within ~5pp for accuracy)
+    - SFT training on `sample_964` (1x) dataset runs to completion via `eai-run`
+    - SFT training on `sample_964_8x` (8x) dataset runs to completion via `eai-run`
+    - Both checkpoints are loadable with `AutoModelForCausalLM.from_pretrained()`
+    - AIME'24 evaluation for each: Reference is Format Correctness ~56.4%, Accuracy ~74.5%, Token Latency ~17.6k (tolerance: within **2pp** for accuracy)
+    - 8x vs 1x accuracy comparison documented
   - Negative Tests (expected to FAIL):
     - Untrained base model produces near-zero format correctness
     - Training on empty dataset fails immediately
@@ -82,7 +90,7 @@ Following TDD philosophy, each criterion includes positive and negative tests fo
   - Positive Tests (expected to PASS):
     - SFT training on 17k-sample self-training dataset runs to completion
     - Format Correctness improves to ~77.0% (higher than 1st SFT's 56.4%)
-    - AIME'24 Accuracy ~74.0%, Token Latency ~17.3k (tolerance: within ~5pp for accuracy)
+    - AIME'24 Accuracy ~74.0%, Token Latency ~17.3k (tolerance: within ~2pp for accuracy)
   - Negative Tests (expected to FAIL):
     - Format Correctness lower than 1st SFT indicates self-training regression
 
@@ -90,7 +98,7 @@ Following TDD philosophy, each criterion includes positive and negative tests fo
   - Positive Tests (expected to PASS):
     - RL training with `algorithm.norm_adv_by_std_in_grpo=False` (mean-centered) runs on self-training SFT checkpoint via `eai-run`
     - `reward/mean` and `metrics/correct_rate` improve over training
-    - AIME'24 evaluation produces: Accuracy ~79.9%, Token Latency ~16.9k (tolerance: within ~5pp for accuracy)
+    - AIME'24 evaluation produces: Accuracy ~79.9%, Token Latency ~16.9k (tolerance: within ~2pp for accuracy)
     - Token Latency decreases compared to SFT-only checkpoints
   - Negative Tests (expected to FAIL):
     - RL training without SFT checkpoint as initialization fails
@@ -139,12 +147,14 @@ The reproduction produces all five data points across the two ablation tables wi
 1. **Environment**: Create the `tw` conda environment with Python 3.12 (`conda create -n tw python=3.12 -y`). Install PyTorch 2.6.0+cu124, then SFT deps, RL deps, data generation deps, and flash-attn. Configure OpenAI API key.
 
 2. **Data Preparation**:
-   - Download pre-processed 1st SFT data (~1000 samples) from HuggingFace: `longlian/threadweaver_public_code_reproduced` (subdirectory `polaris_data_53K_1_1k_1000samples_step5_v1_v1_v1`)
-   - Download Polaris-53K parquet and verify MD5 (needed for RL data preparation)
+   - Download pre-processed 1st SFT data from HuggingFace: `longlian/threadweaver_public_code_reproduced` (subdirectory `polaris_data_53K_1_1k_1000samples_v111/`):
+     - `sample_964` — 1x dataset (~964 samples)
+     - `sample_964_8x` — 8x augmented dataset
+   - Download Polaris-53K parquet and verify MD5 (needed for RL data preparation in future phase)
    - The 5-stage data generation pipeline can be skipped for the 1st SFT phase since pre-processed data is available
-   - Self-training expansion to 17k samples still requires generating additional data using the 1st SFT checkpoint
+   - Self-training expansion to 17k samples still requires generating additional data using the 1st SFT checkpoint (future phase)
 
-3. **1st SFT (959 samples)**: Train on the initial 959-sample parallel dataset using `train.sh` with `TRAIN_DATA` pointing to the 959-sample parquet. Evaluate on AIME'24.
+3. **1st SFT (1x and 8x)**: Train on both `sample_964` (1x) and `sample_964_8x` (8x) datasets using `train.sh` with `TRAIN_DATA` pointing to each parquet. Evaluate both on AIME'24 and compare 8x vs 1x accuracy. Target: within 2pp of reference 74.5% AIME'24 accuracy.
 
 4. **Self-Training SFT (17k samples)**: Use the 1st SFT checkpoint to generate more parallel trajectories, filter for format/correctness, scale to ~17k samples. Retrain SFT on the expanded dataset. Evaluate on AIME'24.
 
@@ -190,17 +200,21 @@ The reproduction produces all five data points across the two ablation tables wi
    - **Output artifact**: `Qwen/Qwen3-8B-131072/`
    - **Depends on**: Milestone 1
 
-3. **Data Preparation**: Obtain training data for SFT and RL
-   - Download pre-processed 1st SFT data from HuggingFace (`longlian/threadweaver_public_code_reproduced`, subdir `polaris_data_53K_1_1k_1000samples_step5_v1_v1_v1`)
-   - Verify dataset loads and has ~959-1000 samples with `qwen_text` field
-   - Download Polaris-53K parquet and verify MD5 (for RL data preparation later)
-   - **Output artifacts**: 1st SFT training parquet (~959 samples), Polaris-53K raw parquet
+3. **Data Preparation**: Obtain training data for SFT (and RL later)
+   - Download pre-processed 1st SFT data from HuggingFace (`longlian/threadweaver_public_code_reproduced`, subdir `polaris_data_53K_1_1k_1000samples_v111/`):
+     - `sample_964` — 1x dataset (~964 samples)
+     - `sample_964_8x` — 8x augmented dataset
+   - Verify both datasets load and expose the `qwen_text` field
+   - Download Polaris-53K parquet and verify MD5 (for RL data preparation in future phase)
+   - **Output artifacts**: 1st SFT training parquets (1x and 8x), Polaris-53K raw parquet
    - **Depends on**: Milestone 1
 
-4. **1st SFT Training + AIME'24 Eval**: Train on 959 samples, evaluate
-   - Run `TRAIN_DATA=<959-sample-parquet> ./train.sh` via `eai-run`
-   - Evaluate on AIME'24: expect ~56.4% format correctness, ~74.5% accuracy, ~17.6k token latency
-   - **Output artifacts**: 1st SFT checkpoint, AIME'24 eval results (Row 1 of Table 1)
+4. **1st SFT Training + AIME'24 Eval**: Train on both 1x and 8x datasets, evaluate, compare
+   - Run `TRAIN_DATA=<sample_964-parquet> ./train.sh` via `eai-run` (1x)
+   - Run `TRAIN_DATA=<sample_964_8x-parquet> ./train.sh` via `eai-run` (8x)
+   - Evaluate both checkpoints on AIME'24: reference is ~56.4% format correctness, ~74.5% accuracy, ~17.6k token latency (tolerance: within **2pp** for accuracy)
+   - Compare 8x vs 1x accuracy to determine which variant to carry forward
+   - **Output artifacts**: 1st SFT checkpoints (1x and 8x), AIME'24 eval results for both, comparison summary (Row 1 of Table 1)
    - **Depends on**: Milestones 1, 2, 3
 
 5. **Self-Training Data Expansion**: Scale to 17k samples
@@ -249,9 +263,9 @@ Each task must include exactly one routing tag:
 | task2 | Analyze dependency conflicts between SFT, RL, and data generation packages; document fallback two-env strategy | AC-1, AC-1.1 | analyze | task1 |
 | task3 | Write model download and context extension commands with verification | AC-3 | coding | task1 |
 | task4 | Write AIME'24 dataset preparation: obtain problems, format as parquet with required schema, verify with simple_eval.py | AC-8 | coding | task1 |
-| task5 | Write data preparation: download pre-processed 1st SFT data from HuggingFace, download Polaris-53K for RL, verify formats | AC-2, AC-2.1, AC-2.3 | coding | task1, task3 |
-| task6 | Analyze downloaded HF dataset: verify sample count, schema (`qwen_text` field), compatibility with `train.sh` | AC-2, AC-2.1 | analyze | task5 |
-| task7 | Write 1st SFT training (959 samples) and AIME'24 evaluation commands | AC-4 | coding | task4, task5 |
+| task5 | Write data preparation: download both 1x (`sample_964`) and 8x (`sample_964_8x`) SFT data from HuggingFace, download Polaris-53K for RL, verify formats | AC-2, AC-2.1, AC-2.3 | coding | task1, task3 |
+| task6 | Analyze downloaded HF datasets (1x and 8x): verify sample counts, schema (`qwen_text` field), compatibility with `train.sh` | AC-2, AC-2.1 | analyze | task5 |
+| task7 | Write 1st SFT training commands for both 1x and 8x datasets, AIME'24 evaluation for both, and 8x vs 1x accuracy comparison | AC-4 | coding | task4, task5 |
 | task8 | Write self-training data expansion procedure: use 1st SFT checkpoint to generate more data, filter, scale to 17k | AC-2.2, AC-5 | coding | task7 |
 | task9 | Analyze self-training methodology: verify filtering criteria, expected yield rate, format correctness improvement | AC-2.2, AC-5 | analyze | task8 |
 | task10 | Write self-training SFT (17k samples) and AIME'24 evaluation commands | AC-5 | coding | task8 |
@@ -305,10 +319,10 @@ Each task must include exactly one routing tag:
   - Decision Status: `Single node, 8x80G GPUs` (user confirmed)
 
 - DEC-3: Acceptance metric philosophy
-  - Claude Position: Tolerance-based (within ~5pp of reference)
+  - Claude Position: Tolerance-based (within ~2pp of reference for AIME'24 accuracy)
   - Codex Position: Recommends tolerance-based with reference numbers retained as targets
-  - Tradeoff Summary: Exact match is fragile across hardware/seed variations; tolerance captures "successful reproduction"
-  - Decision Status: `Tolerance-based` (user confirmed)
+  - Tradeoff Summary: 2pp tolerance balances reproducibility with meaningful accuracy validation
+  - Decision Status: `Tolerance-based, 2pp` (user updated)
 
 - DEC-4: Environment starting point
   - Claude Position: Fresh environment setup from scratch
@@ -359,7 +373,7 @@ eai-run -i -J ralph/{job-name} --pty nvidia-smi
 
 ### SFT Training Data Format
 - `train.sh` accepts a parquet dataset via `TRAIN_DATA` env var; the dataset must expose a `qwen_text` field.
-- The pre-processed HuggingFace dataset (`longlian/threadweaver_public_code_reproduced`, subdir `polaris_data_53K_1_1k_1000samples_step5_v1_v1_v1`) provides this data for the 1st SFT phase, avoiding the need to run the full 5-stage data generation pipeline.
+- The pre-processed HuggingFace datasets (`longlian/threadweaver_public_code_reproduced`, subdir `polaris_data_53K_1_1k_1000samples_v111/sample_964` for 1x and `sample_964_8x` for 8x) provide this data for the 1st SFT phase, avoiding the need to run the full 5-stage data generation pipeline. Both variants should be trained and compared.
 - For RL, veRL expects Parquet with `prompt` and `data_source` columns; follow the README to prepare data from Polaris-53K.
 
 ### Known Version Tensions

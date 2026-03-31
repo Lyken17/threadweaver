@@ -212,3 +212,9 @@ wandb/
 
 *_ignored*
 .vscode
+
+# Local working files
+logs/
+threadweaver_sft/data/
+.humanize/
+*.swp

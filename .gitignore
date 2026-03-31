@@ -216,5 +216,8 @@ wandb/
 # Local working files
 logs/
 threadweaver_sft/data/
+threadweaver_sft/ckpts/
 .humanize/
+.tmp_scripts/
 *.swp
+threadweaver_sft/Q3-8B-131072-*/

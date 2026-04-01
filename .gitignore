@@ -221,3 +221,4 @@ threadweaver_sft/ckpts/
 .tmp_scripts/
 *.swp
 threadweaver_sft/Q3-8B-131072-*/
+threadweaver_sft/checkpoint-*/

@@ -929,9 +929,9 @@ for i in range(total):
         is_parallel = "<Parallel>" in r
         parallel_lst.append(is_parallel)
         has_format = (
-            "<Parallel>" in r and "</Parallel>" in r
-            and "<Thread>" in r and "</Thread>" in r
-            and "<Outlines>" in r and "</Outlines>" in r
+            "<Parallel>" in r
+            and "<Thread>" in r
+            and "<Outlines>" in r
         )
         format_correct_lst.append(has_format)
         # Multiverse uses <Think> and </Think> tags, so we need to replace them with <think> and </think>

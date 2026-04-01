@@ -907,6 +907,7 @@ total_acceleration_ratios = []
 total_parallel_ratios = []
 total_num_tokens_list = []
 total_num_tokens_in_longest_thread_list = []
+total_format_correct = []
 
 for i in range(total):
     response_lst = responses[i]
@@ -923,9 +924,16 @@ for i in range(total):
     num_tokens_list = []
     num_tokens_in_longest_thread_list = []
 
+    format_correct_lst = []
     for r in response_lst:
         is_parallel = "<Parallel>" in r
         parallel_lst.append(is_parallel)
+        has_format = (
+            "<Parallel>" in r and "</Parallel>" in r
+            and "<Thread>" in r and "</Thread>" in r
+            and "<Outlines>" in r and "</Outlines>" in r
+        )
+        format_correct_lst.append(has_format)
         # Multiverse uses <Think> and </Think> tags, so we need to replace them with <think> and </think>
         r = r.replace("<Think>", "<think>").replace("</Think>", "</think>")
         if use_full_reward_fn:
@@ -951,6 +959,7 @@ for i in range(total):
     total_parallel_ratios.append(parallel_ratios)
     total_num_tokens_list.append(num_tokens_list)
     total_num_tokens_in_longest_thread_list.append(num_tokens_in_longest_thread_list)
+    total_format_correct.append(format_correct_lst)
     if max_score == 1:
         passes += 1
 
@@ -1003,6 +1012,10 @@ avg_parallel_ratio = np.mean(all_parallel_ratios) if all_parallel_ratios else 0.
 avg_total_num_tokens = np.mean(all_num_tokens) if all_num_tokens else 0.0
 avg_num_tokens_longest = np.mean(all_num_tokens_longest) if all_num_tokens_longest else 0.0
 
+all_format_correct = [fc for sample_fc in total_format_correct for fc in sample_fc]
+format_correctness = np.mean(all_format_correct) if all_format_correct else 0.0
+
+print(f"Format Correctness: {format_correctness:.4f} ({format_correctness * 100:.2f}%)")
 print(f"Average acceleration_ratio: {avg_acceleration_ratio:.4f}")
 print(f"Average parallel_ratio: {avg_parallel_ratio:.4f}")
 print(f"Average total_num_tokens: {avg_total_num_tokens:.2f}")

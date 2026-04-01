@@ -2,13 +2,15 @@
 """Assemble self-training dataset from generated splits.
 
 Reads the split JSON files from the self-training generation,
-filters for correctness using the polaris ground truth,
-applies Qwen chat template, and saves as training parquet.
+filters for both answer correctness AND format correctness using
+the strict parallel format validator, applies Qwen chat template,
+and saves as training parquet.
 """
 import argparse
 import json
 import math
 import os
+import re
 import sys
 from typing import Dict, List
 
@@ -19,6 +21,59 @@ from transformers import AutoTokenizer
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "data_generation", "src"))
 from rewards import rllm_reward_fn_math
+
+
+def _has_tags(txt):
+    return bool(re.search(r'<(/?)(\w+)>', txt, re.IGNORECASE))
+
+
+def is_parallel_format_correct(response: str) -> bool:
+    """Check if response has valid <Parallel> structure (strict, from Stage 5)."""
+    if "<Parallel>" not in response or "</Parallel>" not in response:
+        return False
+    if response.count("<Parallel>") != response.count("</Parallel>"):
+        return False
+    for pm in re.finditer(r'<Parallel>(.*?)</Parallel>', response, re.DOTALL):
+        block = pm.group(1)
+        if '<Parallel>' in block:
+            return False
+        for tag in re.findall(r'<(/?)(\w+)>', block):
+            if tag[1].lower() not in ('outlines', 'outline', 'thread', 'conclusion'):
+                return False
+        seq = re.compile(
+            r'^\s*<Outlines>(?P<o>.*?)</Outlines>\s*(?P<t>(?:<Thread>.*?</Thread>\s*)+)'
+            r'(?:\s*<Conclusion>(?P<c>.*?)</Conclusion>)?\s*$', re.DOTALL)
+        m = seq.match(block)
+        if not m:
+            return False
+        outlines = re.findall(r'<Outline>(.*?)</Outline>', m.group('o'), re.DOTALL)
+        if not outlines:
+            return False
+        nums = []
+        for text in outlines:
+            if _has_tags(text):
+                return False
+            nm = re.match(r'^\s*(\d+):\s*(.+)$', text.strip(), re.DOTALL)
+            if not nm:
+                return False
+            nums.append(int(nm.group(1)))
+        if nums != list(range(1, len(outlines) + 1)):
+            return False
+        threads = list(re.finditer(r'<Thread>(.*?)</Thread>', m.group('t'), re.DOTALL))
+        if len(threads) != len(outlines):
+            return False
+        tnums = []
+        for tm in threads:
+            txt = tm.group(1)
+            if _has_tags(txt):
+                return False
+            nm = re.match(r'^\s*(\d+):\s*(.+)$', txt.strip(), re.DOTALL)
+            if not nm:
+                return False
+            tnums.append(int(nm.group(1)))
+        if tnums != nums:
+            return False
+    return True
 
 
 def main():
@@ -60,6 +115,7 @@ def main():
             df_slice = df_slice.iloc[:min_len]
 
         correct_count = 0
+        format_count = 0
         for i, (item, (_, row)) in enumerate(zip(data, df_slice.iterrows())):
             response = item[0]
             ground_truth = row["reward_model"]["ground_truth"]
@@ -67,6 +123,10 @@ def main():
             if not rllm_reward_fn_math("polaris", response, ground_truth):
                 continue
             correct_count += 1
+
+            if not is_parallel_format_correct(response):
+                continue
+            format_count += 1
 
             question = row["prompt"][0]["content"]
             messages = [
@@ -88,7 +148,7 @@ def main():
                 "raw_messages": messages,
             })
 
-        print(f"Split {split_idx}: {correct_count}/{len(data)} correct ({100*correct_count/len(data):.1f}%)")
+        print(f"Split {split_idx}: {correct_count}/{len(data)} correct, {format_count} format-correct ({100*format_count/len(data):.1f}%)")
 
     print(f"\nTotal correct samples: {len(all_records)}")
 

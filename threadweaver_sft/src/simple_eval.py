@@ -61,12 +61,14 @@ def is_parallel_format_correct(model_response: str, treat_no_parallel_as_format_
         if num_outline_start > 50 or num_outline_start == 0:
             return False
 
+        # Match: Outlines, Threads, optional Conclusion, consuming entire block
         seq_pattern = re.compile(
             r'^\s*'
             r'<Outlines>(?P<outlines>.*?)</Outlines>'
             r'\s*'
             r'(?P<threads>(?:<Thread>.*?</Thread>\s*)+)'
-            r'\s*',
+            r'(?:\s*<Conclusion>(?P<conclusion>.*?)</Conclusion>)?'
+            r'\s*$',
             re.DOTALL
         )
         m = seq_pattern.match(block)
@@ -96,6 +98,9 @@ def is_parallel_format_correct(model_response: str, treat_no_parallel_as_format_
         thread_numbers = []
         for tmatch in thread_matches:
             txt = tmatch.group(1)
+            # Reject tags inside Thread bodies (faithful to Stage 5 validator)
+            if _has_tags(txt):
+                return False
             num_match = re.match(r'^\s*(\d+):\s*(.+)$', txt.strip(), re.DOTALL)
             if not num_match:
                 return False
@@ -103,6 +108,12 @@ def is_parallel_format_correct(model_response: str, treat_no_parallel_as_format_
 
         if thread_numbers != outline_numbers:
             return False
+
+        # Validate Conclusion if present
+        conclusion = m.group('conclusion')
+        if conclusion is not None:
+            if not conclusion.strip() or _has_tags(conclusion):
+                return False
 
     return True
 

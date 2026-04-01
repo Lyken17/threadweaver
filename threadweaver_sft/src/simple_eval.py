@@ -17,6 +17,96 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 from utils import popen_launch_server, terminate_process
 
+
+def _has_tags(txt):
+    """Check if text contains any XML-like tags."""
+    return bool(re.search(r'<(/?)(\w+)>', txt, re.IGNORECASE))
+
+
+def is_parallel_format_correct(model_response: str, treat_no_parallel_as_format_error: bool = True) -> bool:
+    """Strict format correctness check matching the repo's Stage 5 validator.
+
+    Checks that each <Parallel> block contains properly structured
+    <Outlines>/<Outline>/<Thread> with matching numbering.
+    Uses skip_conclusion_check=True and allow_nonempty_whitespace=True
+    since branching generation may not preserve these in merged output.
+    """
+    if "<Parallel>" not in model_response or "</Parallel>" not in model_response:
+        return not treat_no_parallel_as_format_error
+
+    if model_response.count("<Parallel>") != model_response.count("</Parallel>"):
+        return False
+
+    for pm in re.finditer(r'<Parallel>(.*?)</Parallel>', model_response, re.DOTALL):
+        block = pm.group(1)
+
+        if '<Parallel>' in block or '</Parallel>' in block:
+            return False
+
+        for tag in re.findall(r'<(/?)(\w+)>', block):
+            if tag[1].lower() not in ('outlines', 'outline', 'thread', 'conclusion'):
+                return False
+
+        num_outline_start = block.count('<Outline>')
+        num_outline_end = block.count('</Outline>')
+        num_thread_start = block.count('<Thread>')
+        num_thread_end = block.count('</Thread>')
+
+        if num_outline_start != num_thread_start:
+            return False
+        if num_outline_start != num_outline_end:
+            return False
+        if num_thread_start != num_thread_end:
+            return False
+        if num_outline_start > 50 or num_outline_start == 0:
+            return False
+
+        seq_pattern = re.compile(
+            r'^\s*'
+            r'<Outlines>(?P<outlines>.*?)</Outlines>'
+            r'\s*'
+            r'(?P<threads>(?:<Thread>.*?</Thread>\s*)+)'
+            r'\s*',
+            re.DOTALL
+        )
+        m = seq_pattern.match(block)
+        if not m:
+            return False
+
+        outlines = re.findall(r'<Outline>(.*?)</Outline>', m.group('outlines'), re.DOTALL)
+        if not outlines:
+            return False
+
+        outline_numbers = []
+        for text in outlines:
+            if _has_tags(text):
+                return False
+            num_match = re.match(r'^\s*(\d+):\s*(.+)$', text.strip(), re.DOTALL)
+            if not num_match:
+                return False
+            outline_numbers.append(int(num_match.group(1)))
+
+        if outline_numbers != list(range(1, len(outlines) + 1)):
+            return False
+
+        thread_matches = list(re.finditer(r'<Thread>(.*?)</Thread>', m.group('threads'), re.DOTALL))
+        if len(thread_matches) != len(outlines):
+            return False
+
+        thread_numbers = []
+        for tmatch in thread_matches:
+            txt = tmatch.group(1)
+            num_match = re.match(r'^\s*(\d+):\s*(.+)$', txt.strip(), re.DOTALL)
+            if not num_match:
+                return False
+            thread_numbers.append(int(num_match.group(1)))
+
+        if thread_numbers != outline_numbers:
+            return False
+
+    return True
+
+
 # Setup argument parser
 parser = argparse.ArgumentParser(description="Evaluate a model on AIME 2024")
 parser.add_argument(
@@ -928,11 +1018,7 @@ for i in range(total):
     for r in response_lst:
         is_parallel = "<Parallel>" in r
         parallel_lst.append(is_parallel)
-        has_format = (
-            "<Parallel>" in r
-            and "<Thread>" in r
-            and "<Outlines>" in r
-        )
+        has_format = is_parallel_format_correct(r, treat_no_parallel_as_format_error=True)
         format_correct_lst.append(has_format)
         # Multiverse uses <Think> and </Think> tags, so we need to replace them with <think> and </think>
         r = r.replace("<Think>", "<think>").replace("</Think>", "</think>")

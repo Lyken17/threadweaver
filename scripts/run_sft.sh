@@ -52,7 +52,11 @@ export OUTPUT_DIR="${OUTPUT_DIR}"
 export WANDB_PROJECT="threadweaver-sft"
 export WANDB_RUN_NAME="${LABEL}-${UID_STAMP}"
 
-bash train.sh --save_strategy="steps" --save_steps=100 $@
+RESUME_ARG=""
+if [ -n "\${RESUME_FROM:-}" ]; then
+    RESUME_ARG="--resume_from_checkpoint=\${RESUME_FROM}"
+fi
+bash train.sh --save_strategy="steps" --save_steps=100 --save_only_model=False \${RESUME_ARG} \$@
 echo "Training complete. Checkpoint saved to: ${OUTPUT_DIR}"
 EOFWRAPPER
 chmod +x "$WRAPPER"
